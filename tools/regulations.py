@@ -33,9 +33,13 @@ def search_regulations(query="cryptocurrency", max_results=1000):
             "sort": "-lastModifiedDate"
         }
 
-        response = requests.get(url, headers=headers, params=params)
-        if response.status_code != 200:
-            raise Exception(f"Failed to search regulations: {response.status_code} - {response.text}")
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Warning: Failed to fetch regulations page {page}: {e}")
+            break  # Stop trying, return whatever we got so far
+
 
         data = response.json().get("data", [])
         if not data:

@@ -16,51 +16,103 @@ from tools.sentiment import analyze_sentiment
 # Set Streamlit page config
 st.set_page_config(page_title="Crypto AI Agent", page_icon="🧠", layout="wide")
 
-# CSS for side-by-side horizontal scrolling top banner
-st.markdown("""
+import streamlit.components.v1 as components
+import requests
+
+# --- Crypto Price Ticker using financialdatasets.ai ---
+
+# Top 25 coins you want
+coins = [
+    "BTC-USD", "ETH-USD", "USDT-USD", "BNB-USD", "SOL-USD", "USDC-USD", "XRP-USD", "DOGE-USD", "TON-USD", "ADA-USD",
+    "AVAX-USD", "SHIB-USD", "WBTC-USD", "DOT-USD", "TRX-USD", "LINK-USD", "BCH-USD", "NEAR-USD", "LTC-USD", "ICP-USD",
+    "MATIC-USD", "DAI-USD", "UNI-USD", "LEO-USD", "ETC-USD"
+]
+
+# Pull sentiment for each coin
+# Pull ALL articles first (not just 10)
+articles = get_crypto_news(max_results=200)  # Get more news so we have enough data
+
+# Helper: Analyze sentiment score per coin AND count articles
+def get_sentiment_score_for_coin(coin_name, articles):
+    related_articles = [article for article in articles if coin_name.lower().replace("-usd", "") in article.get("title", "").lower()]
+    
+    if not related_articles:
+        return 0, 0  # No articles → Neutral score, 0 articles
+    
+    scores = []
+    for article in related_articles:
+        sentiment = analyze_sentiment(article.get("title", ""))
+        if sentiment == "Positive":
+            scores.append(1)
+        elif sentiment == "Negative":
+            scores.append(-1)
+        else:
+            scores.append(0)
+    
+    average_score = sum(scores) / len(scores)
+    return round(average_score, 2), len(related_articles)   # <<<<< see? returns TWO things
+
+
+# Now actually calculate sentiment per coin
+sentiments = {}
+article_counts = {}  # <-- NEW dictionary
+
+for coin in coins:
+    avg_score, num_articles = get_sentiment_score_for_coin(coin, articles)
+    sentiments[coin] = avg_score
+    article_counts[coin] = num_articles
+
+
+
+# Build the ticker text
+ticker_text = "   •   ".join([
+    f"{coin}: {'🟢' if sentiments[coin] > 0.2 else '⚪' if sentiments[coin] >= -0.2 else '🔴'} {sentiments[coin]:+.2f} ({article_counts[coin]} articles)"
+    for coin in coins
+])
+
+
+
+
+# Show the moving ticker
+components.html(f"""
     <style>
-    .block-container {
-        max-width: 100%;
-        padding-left: 2rem;
-        padding-right: 2rem;
-    }
-    .news-banner {
-        display: flex;
-        flex-direction: row;
-        overflow-x: auto;
-        gap: 16px;
-        padding: 1rem 0;
-        margin-bottom: 2rem;
-    }
-    .news-box {
-        flex: 0 0 auto;
-        width: 240px;
-        height: 120px;
-        background-color: #1e1e1e;
-        border: 1px solid #444;
-        padding: 12px;
-        border-radius: 10px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-    }
-    .news-box a {
-        color: #f3f3f3;
-        text-decoration: none;
-        font-weight: bold;
-        font-size: 14px;
-    }
-    .news-box .domain {
-        font-size: 12px;
-        color: #aaa;
-    }
+        .ticker-container {{
+            width: 100%;
+            overflow: hidden;
+            background-color: #111;
+            padding: 8px 0;
+        }}
+        .ticker-text {{
+            display: inline-block;
+            white-space: nowrap;
+            animation: tickerMove 100s linear infinite;
+            font-size: 16px;
+            color: #00ff99;
+            font-weight: bold;
+        }}
+        @keyframes tickerMove {{
+            0% {{ transform: translateX(20%); }}
+            100% {{ transform: translateX(-20%); }}
+        }}
     </style>
-""", unsafe_allow_html=True)
+    <div class="ticker-container">
+        <div class="ticker-text">
+    {ticker_text}   {ticker_text}
+    </div>
+
+    </div>
+""", height=50)
+
 
 # --- Horizontal Top Banner ---
-st.markdown("## 🗞️ Top 10 Recent Crypto Headlines")
+# --- Horizontal Top Banner ---
+st.markdown("## 🗞️Recent Crypto Headlines")
 
-articles = get_crypto_news(max_results=10)
+
+# Analyze sentiment for each article
+for article in articles:
+    title = article.get("title", "")
+    article["sentiment"] = analyze_sentiment(title)
 
 news_boxes = ""
 for article in articles:
@@ -68,15 +120,79 @@ for article in articles:
     link = article.get("url", "#")
     domain = article.get("domain", "unknown")
     news_boxes += f"""
-        <div class="news-box">
-            <a href="{link}" target="_blank">{title}</a>
-            <div class="domain">Source: {domain}</div>
+    <div class="news-box">
+        <a href="{link}" target="_blank">{title}</a>
+        <div class="domain">Source: {domain}</div>
+        <div class="sentiment">
+            {"🟢" if article.get('sentiment') == "Positive" else "⚪" if article.get('sentiment') == "Neutral" else "🔴"}
+            {article.get('sentiment', 'Neutral')}
         </div>
-    """
+    </div>
+"""
 
-news_html = f'<div class="news-banner">{news_boxes}</div>'
+
 import streamlit.components.v1 as components
-components.html(news_html, height=180)
+
+with st.container():
+    components.html(f"""
+        <style>
+            .news-banner {{
+                display: flex;
+                flex-direction: row;
+                overflow-x: auto;
+                gap: 20px;
+                padding: 1rem 0;
+                margin-bottom: 2rem;
+                white-space: nowrap;
+                flex-wrap: nowrap;
+                scrollbar-width: none; /* Firefox */
+            }}
+            .news-banner::-webkit-scrollbar {{
+                display: none; /* Chrome, Safari, Opera */
+            }}
+            .news-box {{
+                flex: 0 0 auto;
+                width: 180px;
+                height: 140px;
+                background-color: #333;
+                border: 1px solid #555;
+                padding: 12px;
+                border-radius: 12px;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+                transition: transform 0.3s, box-shadow 0.3s;
+            }}
+            .news-box:hover {{
+                transform: scale(1.05);
+                box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+                border-color: #888;
+            }}
+            .news-box a {{
+                color: #ffffff;
+                text-decoration: none;
+                font-weight: 700;
+                font-size: 14px;
+                white-space: normal;
+                word-wrap: break-word;
+            }}
+            .news-box .domain {{
+                font-size: 13px;
+                color: #bbb;
+                margin-top: 10px;
+            }}
+            .sentiment {{
+                font-size: 11px;
+                color: #aaa;
+                margin-top: auto;
+                text-align: right;
+            }}
+        </style>
+        <div class="news-banner">
+            {news_boxes}
+        </div>
+    """, height=250, scrolling=True)
 
 # --- Tool Functions ---
 function_schemas = [
@@ -210,8 +326,11 @@ def run_agent_with_trace(user_input, status_box):
             return fn_name, f"📈 Pulled price data for {fn_args['symbol']} ({len(result)} entries)."
 
         elif fn_name == "search_regulations":
-            result = search_regulations(**fn_args)
-            return fn_name, f"🏛️ Found {len(result)} government documents mentioning '{fn_args['query']}'."
+            try:
+                result = search_regulations(**fn_args)
+                return fn_name, f"🏛️ Found {len(result)} government documents mentioning '{fn_args['query']}'."
+            except Exception as e:
+                return fn_name, f"❌ Failed to search regulations: {str(e)}"
 
         elif fn_name == "get_crypto_price_for_date":
             result = get_crypto_price_for_date(**fn_args)

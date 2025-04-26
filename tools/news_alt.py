@@ -6,6 +6,7 @@ import csv
 from datetime import datetime
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
 API_KEY = os.getenv("CRYPTOPANIC_API_KEY")
 
@@ -16,6 +17,7 @@ def get_crypto_news(max_results=25):
     """
     Pull the most recent crypto news from CryptoPanic.
     Saves all articles to the CSV log.
+    Returns only the fields needed for display.
     """
     if not API_KEY:
         raise ValueError("CryptoPanic API key not found in environment.")
@@ -29,12 +31,24 @@ def get_crypto_news(max_results=25):
     if response.status_code != 200:
         raise Exception(f"Failed to fetch news: {response.status_code} - {response.text}")
 
-    news = response.json().get("results", [])[:max_results]
-    save_news_to_log(news)
+    raw_news = response.json().get("results", [])[:max_results]
+    
+    # ⭐ Only return needed fields (cleaned for Streamlit display)
+    news = []
+    for item in raw_news:
+        news.append({
+            "title": item.get("title", "No Title"),
+            "url": item.get("url", "#"),
+            "domain": item.get("domain", "unknown")
+        })
+
+    save_news_to_log(raw_news)
     return news
 
-
 def save_news_to_log(news_list):
+    """
+    Save the full raw news results into a CSV log file.
+    """
     os.makedirs("data", exist_ok=True)
     is_new_file = not os.path.exists(NEWS_LOG_PATH)
 
